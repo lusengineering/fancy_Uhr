@@ -1,0 +1,128 @@
+
+#include <WiFi.h>
+#include <time.h>
+#include <Adafruit_NeoPixel.h>
+
+#define PixelPin 26
+
+int minutenpixel = 1;
+int stundenpixel = 2;
+int helligkeit = 150;
+
+
+const char* ssid     = "DEINWLANNAME";
+const char* password = "DEINWLANPASSWORT";
+
+const char* NTP_SERVER = "ch.pool.ntp.org";
+const char* TZ_INFO    = "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
+
+tm timeinfo;
+time_t now;
+long unsigned lastNTPtime;
+unsigned long lastEntryTime;
+
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(72, PixelPin, NEO_GRB + NEO_KHZ800);
+
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\n\nNTP Time Test\n");
+  WiFi.begin(ssid, password);
+
+  int counter = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(200);
+    if (++counter > 100) ESP.restart();
+    Serial.print ( "." );
+  }
+  Serial.println("\n\nWiFi connected\n\n");
+
+  configTime(0, 0, NTP_SERVER);
+  // See https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv for Timezone codes for your region
+  setenv("TZ", TZ_INFO, 1);
+
+  if (getNTPtime(10)) {  // wait up to 10sec to sync
+  } else {
+    Serial.println("Time not set");
+    ESP.restart();
+  }
+  showTime(timeinfo);
+  lastNTPtime = time(&now);
+  lastEntryTime = millis();
+}
+
+
+void loop() {
+  // getTimeReducedTraffic(3600);
+  getNTPtime(10);
+  showTime(timeinfo);
+   
+  pixels.begin();
+  pixels.clear();
+  pixels.setPixelColor(minutenpixel, pixels.Color(helligkeit,helligkeit,helligkeit));
+  pixels.setPixelColor(stundenpixel, pixels.Color(helligkeit,helligkeit,helligkeit));
+  pixels.show();
+  delay(1000);
+}
+
+bool getNTPtime(int sec) {
+
+  {
+    uint32_t start = millis();
+    do {
+      time(&now);
+      localtime_r(&now, &timeinfo);
+      Serial.print(".");
+      delay(10);
+    } while (((millis() - start) <= (1000 * sec)) && (timeinfo.tm_year < (2016 - 1900)));
+    if (timeinfo.tm_year <= (2016 - 1900)) return false;  // the NTP call was not successful
+    Serial.print("now ");  Serial.println(now);
+    char time_output[30];
+    strftime(time_output, 30, "%a  %d-%m-%y %T", localtime(&now));
+    Serial.println(time_output);
+    Serial.println();
+  }
+  return true;
+}
+
+void showTime(tm localTime) {
+  Serial.print(localTime.tm_mday);
+  Serial.print('/');
+  Serial.print(localTime.tm_mon + 1);
+  Serial.print('/');
+  Serial.print(localTime.tm_year - 100);
+  Serial.print('-');
+  Serial.print(localTime.tm_hour);
+  Serial.print(':');
+  Serial.print(localTime.tm_min);
+  Serial.print(':');
+  Serial.print(localTime.tm_sec);
+  Serial.print(" Day of Week ");
+  if (localTime.tm_hour >= 12){
+  stundenpixel = localTime.tm_hour + 48;
+  }
+  if (localTime.tm_hour < 12){
+    stundenpixel = localTime.tm_hour + 60;
+  }
+  if (localTime.tm_min == 0){
+    minutenpixel = 60;
+  }
+  else{
+    minutenpixel = localTime.tm_min;
+  }
+  
+  
+  if (localTime.tm_hour >= 7){
+    if (localTime.tm_hour <= 18){
+      helligkeit = 150;
+    }
+    else {
+    helligkeit = 50;
+    }
+  }
+  else {
+    helligkeit = 50;
+  }
+  if (localTime.tm_wday == 0)   Serial.println(7);
+  else Serial.println(localTime.tm_wday);
+}
